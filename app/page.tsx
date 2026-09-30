@@ -18,7 +18,7 @@ export default async function Home() {
       tone: "ok",
       detail: "Vercel puede consultar la tabla companies mediante Supabase."
     };
-  } else if (error.code === "42501" || error.status === 401 || error.status === 403) {
+  } else if (error.code === "42501") {
     health = {
       label: "SUPABASE OK · ACCESO PROTEGIDO",
       tone: "warn",
