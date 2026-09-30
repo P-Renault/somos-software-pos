@@ -66,17 +66,10 @@ end;
 $$;
 
 drop trigger if exists companies_set_updated_at on public.companies;
-create trigger companies_set_updated_at before update on public.companies
-for each row execute function public.set_updated_at();
-
+create trigger companies_set_updated_at before update on public.companies for each row execute function public.set_updated_at();
 drop trigger if exists profiles_set_updated_at on public.profiles;
-create trigger profiles_set_updated_at before update on public.profiles
-for each row execute function public.set_updated_at();
-
+create trigger profiles_set_updated_at before update on public.profiles for each row execute function public.set_updated_at();
 drop trigger if exists categories_set_updated_at on public.categories;
-create trigger categories_set_updated_at before update on public.categories
-for each row execute function public.set_updated_at();
-
+create trigger categories_set_updated_at before update on public.categories for each row execute function public.set_updated_at();
 drop trigger if exists products_set_updated_at on public.products;
-create trigger products_set_updated_at before update on public.products
-for each row execute function public.set_updated_at();
+create trigger products_set_updated_at before update on public.products for each row execute function public.set_updated_at();
