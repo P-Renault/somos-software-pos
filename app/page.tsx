@@ -9,5 +9,5 @@ export default async function Home() {
   const { data: company } = profile?.company_id
     ? await supabase.from("companies").select("name, tax_id").eq("id", profile.company_id).maybeSingle()
     : { data: null };
-  return <PosShell user={{email:user.email??"",name:profile?.full_name??user.email?.split("@")[0]??"Usuario",role:profile?.role??"owner"}} company={{name:company?.name??"Mi empresa",taxId:company?.tax_id??""}} />;
+  return <PosShell user={{email:user.email??"",name:profile?.full_name??user.email?.split("@")[0]??"Usuario",role:profile?.role??"owner"}} company={{id:profile?.company_id??"",name:company?.name??"Mi empresa",taxId:company?.tax_id??""}} />;
 }
