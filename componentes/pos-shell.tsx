@@ -39,9 +39,12 @@ async function testDteConnection() {
   setDteTesting(true); setDteError(""); setNotice("");
   try {
     const { data, error } = await supabase.functions.invoke("dte-issue", {
-      body: { document_type: 39, idempotency_key: crypto.randomUUID() },
+      body: { action: "test_connection" },
     });
-    if (!error) { setNotice("La función dte-issue respondió correctamente. Respuesta: " + JSON.stringify(data)); return; }
+    if (!error) {
+      setNotice(data?.message ?? "La función dte-issue respondió correctamente.");
+      return;
+    }
     const context = (error as any).context;
     let details: any = null;
     const status: number | undefined = typeof context?.status === "number" ? context.status : undefined;
