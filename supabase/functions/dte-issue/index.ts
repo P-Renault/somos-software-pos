@@ -3,19 +3,63 @@ import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 /**
  * BOOM POS — dte-issue
- * Test de conexión: valida JWT, perfil y lectura de configuración.
- * No emite, firma ni transmite documentos oficiales al SII.
- * Mantener verify_jwt habilitado en la configuración de la función.
+ *
+ * Secure DTE gateway scaffold:
+ * - Authenticates the Supabase user and resolves their company.
+ * - Reads the company's DTE configuration.
+ * - Exposes preflight diagnostics for the current configuration.
+ * - Explicitly blocks official issuance until the SII adapter is implemented.
+ *
+ * IMPORTANT:
+ * This function does NOT generate official DTE XML, sign XML, reserve CAF folios,
+ * authenticate with the SII, transmit documents, or interpret an SII receipt.
+ * Keep verify_jwt enabled in supabase/config.toml.
  */
 
-function respond(status: number, body: Record<string, unknown>): Response {
+type JsonObject = Record<string, unknown>;
+
+function respond(status: number, body: JsonObject): Response {
   const headers = new Headers(corsHeaders);
   headers.set("Content-Type", "application/json; charset=utf-8");
+  headers.set("Cache-Control", "no-store");
   return new Response(JSON.stringify(body), { status, headers });
 }
 
+function normalizeRut(value: string): string {
+  return value.toUpperCase().replace(/[^0-9K]/g, "");
+}
+
+function isValidRut(value: string): boolean {
+  const rut = normalizeRut(value);
+  if (rut.length < 2) return false;
+
+  const body = rut.slice(0, -1);
+  const dv = rut.slice(-1);
+  if (!/^\d+$/.test(body)) return false;
+
+  let sum = 0;
+  let multiplier = 2;
+  for (let i = body.length - 1; i >= 0; i--) {
+    sum += Number(body[i]) * multiplier;
+    multiplier = multiplier === 7 ? 2 : multiplier + 1;
+  }
+
+  const result = 11 - (sum % 11);
+  const expected = result === 11 ? "0" : result === 10 ? "K" : String(result);
+  return dv === expected;
+}
+
+function addCheck(
+  checks: Array<{ code: string; label: string; status: "ok" | "pending" | "blocked"; detail: string }>,
+  code: string,
+  label: string,
+  status: "ok" | "pending" | "blocked",
+  detail: string,
+): void {
+  checks.push({ code, label, status, detail });
+}
+
 Deno.serve(async (req: Request) => {
-  // Preflight CORS: responder antes de procesar el POST.
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
@@ -44,20 +88,18 @@ Deno.serve(async (req: Request) => {
   });
 
   try {
-    const { data: authData, error: authError } =
-      await supabase.auth.getUser();
-
+    const { data: authData, error: authError } = await supabase.auth.getUser();
     if (authError || !authData.user) {
       return respond(401, { ok: false, code: "INVALID_SESSION" });
     }
 
-    let body: Record<string, unknown>;
+    let body: JsonObject;
     try {
       const parsed: unknown = await req.json();
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         return respond(400, { ok: false, code: "INVALID_BODY" });
       }
-      body = parsed as Record<string, unknown>;
+      body = parsed as JsonObject;
     } catch {
       return respond(400, { ok: false, code: "INVALID_JSON" });
     }
@@ -77,14 +119,13 @@ Deno.serve(async (req: Request) => {
       return respond(403, { ok: false, code: "COMPANY_REQUIRED" });
     }
 
-    const companyId = profile.company_id;
-
+    const companyId = profile.company_id as string;
     const { data: settings, error: settingsError } = await supabase
       .from("dte_company_settings")
       .select(
         "id,company_id,environment,issuer_rut,legal_name,business_activity," +
-        "business_address,commune,city,resolution_date,resolution_number," +
-        "certificate_configured,caf_configured,enabled",
+          "business_address,commune,city,resolution_date,resolution_number," +
+          "certificate_configured,caf_configured,enabled",
       )
       .eq("company_id", companyId)
       .maybeSingle();
@@ -94,34 +135,156 @@ Deno.serve(async (req: Request) => {
       return respond(503, { ok: false, code: "DTE_SETTINGS_UNAVAILABLE" });
     }
 
+    const environment =
+      settings?.environment === "production" || settings?.environment === "certification"
+        ? settings.environment
+        : "certification";
+
     const missing: string[] = [];
+    const checks: Array<{
+      code: string;
+      label: string;
+      status: "ok" | "pending" | "blocked";
+      detail: string;
+    }> = [];
+
     if (!settings) {
       missing.push("dte_company_settings");
+      addCheck(
+        checks,
+        "issuer_settings",
+        "Configuración tributaria de la empresa",
+        "blocked",
+        "No existe una fila de configuración DTE para la empresa actual.",
+      );
     } else {
-      if (!settings.issuer_rut) missing.push("issuer_rut");
-      if (!settings.legal_name) missing.push("legal_name");
-      if (settings.enabled !== true) missing.push("issuer_not_enabled");
-      if (settings.certificate_configured !== true) {
-        missing.push("certificate_not_configured");
-      }
-      if (settings.caf_configured !== true) {
-        missing.push("caf_not_configured");
-      }
+      const rutValid = Boolean(settings.issuer_rut && isValidRut(String(settings.issuer_rut)));
+      addCheck(
+        checks,
+        "issuer_rut",
+        "RUT del emisor",
+        rutValid ? "ok" : "blocked",
+        rutValid ? "El RUT tiene un formato y dígito verificador válidos." : "Falta el RUT o su dígito verificador no es válido.",
+      );
+      if (!rutValid) missing.push("issuer_rut");
+
+      const legalNameValid = typeof settings.legal_name === "string" && settings.legal_name.trim().length > 0;
+      addCheck(
+        checks,
+        "legal_name",
+        "Razón social",
+        legalNameValid ? "ok" : "blocked",
+        legalNameValid ? "La razón social está informada." : "Debe informarse la razón social legal del emisor.",
+      );
+      if (!legalNameValid) missing.push("legal_name");
+
+      const activityValid = typeof settings.business_activity === "string" && settings.business_activity.trim().length > 0;
+      addCheck(
+        checks,
+        "business_activity",
+        "Actividad económica",
+        activityValid ? "ok" : "pending",
+        activityValid ? "Hay una actividad económica registrada en la configuración." : "Falta registrar la actividad económica del emisor.",
+      );
+      if (!activityValid) missing.push("business_activity");
+
+      const addressValid = typeof settings.business_address === "string" && settings.business_address.trim().length > 0;
+      const communeValid = typeof settings.commune === "string" && settings.commune.trim().length > 0;
+      const cityValid = typeof settings.city === "string" && settings.city.trim().length > 0;
+      const addressStatus = addressValid && communeValid && cityValid ? "ok" : "pending";
+      addCheck(
+        checks,
+        "business_address",
+        "Domicilio tributario",
+        addressStatus,
+        addressStatus === "ok" ? "Dirección, comuna y ciudad están informadas." : "Completa dirección, comuna y ciudad según los antecedentes tributarios vigentes.",
+      );
+      if (addressStatus !== "ok") missing.push("business_address");
+
+      const enabled = settings.enabled === true;
+      addCheck(
+        checks,
+        "issuer_enabled",
+        "Emisor habilitado en BOOM POS",
+        enabled ? "ok" : "blocked",
+        enabled ? "La configuración permite continuar con verificaciones previas." : "La empresa no está habilitada en la configuración DTE de BOOM POS.",
+      );
+      if (!enabled) missing.push("issuer_not_enabled");
+
+      const certificateConfigured = settings.certificate_configured === true;
+      addCheck(
+        checks,
+        "certificate",
+        "Certificado digital",
+        certificateConfigured ? "pending" : "pending",
+        certificateConfigured
+          ? "La base de datos indica que hay un certificado configurado; su vigencia, cadena y clave privada no se han verificado."
+          : "El certificado digital todavía no figura como configurado.",
+      );
+      if (!certificateConfigured) missing.push("certificate_not_configured");
+
+      const cafConfigured = settings.caf_configured === true;
+      addCheck(
+        checks,
+        "caf",
+        "CAF y folios autorizados",
+        cafConfigured ? "pending" : "pending",
+        cafConfigured
+          ? "La base de datos indica CAF configurado; el archivo, firma, rango y folios disponibles no se han validado."
+          : "El CAF todavía no figura como configurado.",
+      );
+      if (!cafConfigured) missing.push("caf_not_configured");
+
+      const resolutionPresent = Boolean(settings.resolution_date && settings.resolution_number);
+      addCheck(
+        checks,
+        "sii_resolution",
+        "Resolución del SII",
+        resolutionPresent ? "pending" : "pending",
+        resolutionPresent
+          ? "Hay datos de resolución registrados; su validez y alcance no se han confirmado con el SII."
+          : "Faltan datos de resolución o no se han ingresado en la configuración.",
+      );
+      if (!resolutionPresent) missing.push("sii_resolution");
     }
 
-    // Este es el contrato que invoca el botón "Probar conexión".
-    // Comprueba acceso a la función y lectura de configuración; no prueba el SII.
+    addCheck(
+      checks,
+      "sii_adapter",
+      "Adaptador oficial de comunicación con el SII",
+      "blocked",
+      "No implementado: esta función no autentica ante el SII, no genera XML oficial, no firma ni transmite DTE.",
+    );
+
     if (body.action === "test_connection") {
       return respond(200, {
         ok: true,
         connected: true,
         adapter_ready: false,
-        environment: settings?.environment ?? "certification",
+        official_sii_connected: false,
+        company_id: companyId,
+        environment,
         missing,
+        checks,
         message:
-          "Conexión con la función y la configuración DTE correcta. " +
-          "La conexión oficial al SII y el adaptador de emisión todavía " +
-          "no están implementados; no se emitió ningún documento.",
+          "La función de Supabase y la lectura de configuración respondieron correctamente. " +
+          "Esto no prueba conectividad con el SII ni autoriza la emisión de DTE.",
+      });
+    }
+
+    if (body.action === "preflight") {
+      return respond(200, {
+        ok: true,
+        diagnostic_only: true,
+        ready_for_official_issuance: false,
+        official_sii_connected: false,
+        company_id: companyId,
+        environment,
+        missing,
+        checks,
+        message:
+          "Diagnóstico previo completado. La emisión oficial permanece bloqueada hasta implementar y validar " +
+          "el adaptador SII, la generación y firma XML, la gestión segura de CAF/folios y la habilitación tributaria.",
       });
     }
 
@@ -161,23 +324,24 @@ Deno.serve(async (req: Request) => {
         ok: true,
         reused: true,
         job: existing,
-        message: "Se recuperó la solicitud existente.",
+        message: "Se recuperó la solicitud existente; no se creó una emisión nueva.",
       });
     }
 
-    // Bloqueo explícito: no crear registros que aparenten ser emisiones reales.
     return respond(409, {
       ok: false,
       code: "SII_ADAPTER_NOT_READY",
-      environment: settings?.environment ?? "certification",
+      adapter_ready: false,
+      official_sii_connected: false,
+      environment,
       document_type: documentType,
       missing,
       message:
-        "El adaptador oficial del SII aún no está implementado. " +
-        "No se generó ni transmitió ningún documento tributario.",
+        "El adaptador oficial del SII todavía no está implementado. " +
+        "No se creó ni transmitió ningún documento tributario.",
     });
   } catch (error) {
-    console.error("dte-issue internal error", error);
+    console.error("DTE preflight internal error", error);
     return respond(500, { ok: false, code: "INTERNAL_ERROR" });
   }
 });
