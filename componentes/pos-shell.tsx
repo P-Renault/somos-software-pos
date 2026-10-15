@@ -21,6 +21,7 @@ const cols:Record<string,string[]>={"Compras":["N.º documento","Fecha","Proveed
 export default function PosShell({user,company}:P){
  const [active,setActive]=useState<M>("Inicio"),[query,setQuery]=useState(""),[cat,setCat]=useState("Todos"),[products,setProducts]=useState<Product[]>([]),[cart,setCart]=useState<{id:string;qty:number}[]>([]),[scanner,setScanner]=useState(false),[scan,setScan]=useState(""),[newProduct,setNewProduct]=useState(false),[editingProduct,setEditingProduct]=useState<Product|null>(null),[name,setName]=useState(""),[sku,setSku]=useState(""),[category,setCategory]=useState(""),[description,setDescription]=useState(""),[price,setPrice]=useState(""),[cost,setCost]=useState(""),[stock,setStock]=useState("0"),[minStock,setMinStock]=useState("0"),[barcode,setBarcode]=useState(""),[notice,setNotice]=useState(""),[compact,setCompact]=useState(false),[catalogLoading,setCatalogLoading]=useState(false),[catalogLoaded,setCatalogLoaded]=useState(false),[catalogError,setCatalogError]=useState(""),[savingProduct,setSavingProduct]=useState(false);
  const supabase=createClient();
+ const [dteTesting,setDteTesting]=useState(false);
  const [suppliers,setSuppliers]=useState<Supplier[]>([]),[purchases,setPurchases]=useState<Purchase[]>([]),[supplierLoading,setSupplierLoading]=useState(false),[purchaseLoading,setPurchaseLoading]=useState(false),[supplierModal,setSupplierModal]=useState(false),[purchaseModal,setPurchaseModal]=useState(false),[editingSupplier,setEditingSupplier]=useState<Supplier|null>(null),[supplierName,setSupplierName]=useState(""),[supplierRut,setSupplierRut]=useState(""),[supplierContact,setSupplierContact]=useState(""),[supplierPhone,setSupplierPhone]=useState(""),[supplierEmail,setSupplierEmail]=useState(""),[supplierAddress,setSupplierAddress]=useState(""),[purchaseSupplier,setPurchaseSupplier]=useState(""),[purchaseProduct,setPurchaseProduct]=useState(""),[purchaseQty,setPurchaseQty]=useState("1"),[purchaseCost,setPurchaseCost]=useState("0"),[purchaseDoc,setPurchaseDoc]=useState(""),[purchaseDate,setPurchaseDate]=useState(new Date().toISOString().slice(0,10)), [dteSettings,setDteSettings]=useState<DteSetting|null>(null),[dteDocuments,setDteDocuments]=useState<DteDocument[]>([]),[dteLoading,setDteLoading]=useState(false),[dteError,setDteError]=useState(""),[dteSaving,setDteSaving]=useState(false),[dteEnvironment,setDteEnvironment]=useState<"certification"|"production">("certification"),[dteRut,setDteRut]=useState(company.taxId||""),[dteLegalName,setDteLegalName]=useState(company.name||""),[dteActivity,setDteActivity]=useState(""),[dteAddress,setDteAddress]=useState(""),[dteCommune,setDteCommune]=useState(""),[dteCity,setDteCity]=useState(""),[dteResolutionDate,setDteResolutionDate]=useState(""),[dteResolutionNumber,setDteResolutionNumber]=useState(""),[dteType,setDteType]=useState<DteType>(39),[dteReceiverRut,setDteReceiverRut]=useState(""),[dteReceiverName,setDteReceiverName]=useState("Consumidor final"),[dteItemName,setDteItemName]=useState("Producto de prueba"),[dteQuantity,setDteQuantity]=useState("1"),[dteUnitPrice,setDteUnitPrice]=useState("1000"),[dteExempt,setDteExempt]=useState(false),[dteCreating,setDteCreating]=useState(false),[dteSimulationXml,setDteSimulationXml]=useState(""),[purchaseSaving,setPurchaseSaving]=useState(false),[supplierSaving,setSupplierSaving]=useState(false);
  async function loadProducts(){
    if(!company.id){setCatalogError("Tu usuario no tiene una empresa asociada. Asigna una empresa al perfil en Supabase antes de gestionar productos.");setCatalogLoaded(true);setCatalogLoading(false);setProducts([]);return;}
@@ -33,50 +34,27 @@ export default function PosShell({user,company}:P){
  async function loadSuppliers(){if(!company.id)return;setSupplierLoading(true);const {data,error}=await supabase.from("suppliers").select("id,name,tax_id,contact_name,phone,email,address,active").eq("company_id",company.id).eq("active",true).order("name");if(error){setNotice("No se pudieron cargar los proveedores: "+error.message);}else setSuppliers((data??[]) as Supplier[]);setSupplierLoading(false);}
  async function loadPurchases(){if(!company.id)return;setPurchaseLoading(true);const {data,error}=await supabase.from("purchases").select("id,document_number,purchase_date,status,total,supplier_id,suppliers(name),purchase_items(id)").eq("company_id",company.id).order("created_at",{ascending:false}).limit(100);if(error){setNotice("No se pudieron cargar las compras: "+error.message);}else setPurchases((data??[]).map((r:any)=>({id:r.id,document_number:r.document_number,purchase_date:r.purchase_date,status:r.status,total:Number(r.total??0),supplier_id:r.supplier_id,supplier_name:r.suppliers?.name??"Proveedor",item_count:r.purchase_items?.length??0})));setPurchaseLoading(false);}
  async function loadDte(){if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}setDteLoading(true);setDteError("");const [sr,dr]=await Promise.all([supabase.from("dte_company_settings").select("*").eq("company_id",company.id).maybeSingle(),supabase.from("dte_documents").select("id,document_type,folio,environment,status,receiver_rut,receiver_name,issue_date,total_amount,sii_track_id,sii_status_message").eq("company_id",company.id).order("created_at",{ascending:false}).limit(100)]);if(sr.error){setDteError("Error de configuración: "+sr.error.message);setDteSettings(null);}else if(sr.data){const d=sr.data as DteSetting;setDteSettings(d);setDteEnvironment("certification");setDteRut(d.issuer_rut??company.taxId??"");setDteLegalName(d.legal_name??company.name??"");setDteActivity(d.business_activity??"");setDteAddress(d.business_address??"");setDteCommune(d.commune??"");setDteCity(d.city??"");setDteResolutionDate(d.resolution_date??"");setDteResolutionNumber(d.resolution_number??"");}else{setDteSettings(null);setDteRut(company.taxId??"");setDteLegalName(company.name??"");}if(dr.error){setDteError(prev=>[prev,"Error al consultar documentos: "+dr.error.message].filter(Boolean).join(" "));setDteDocuments([]);}else setDteDocuments((dr.data??[]) as DteDocument[]);setDteLoading(false);}
-async function testDteConnection() {
-  setDteError("");
-  setNotice("");
-
-  const { data, error } = await supabase.functions.invoke(
-    "dte-issue",
-    {
-      body: {
-        document_type: 39,
-        idempotency_key: crypto.randomUUID()
-      }
-    }
-  );
-
-  if (!error) {
-    setNotice("Respuesta de dte-issue: " + JSON.stringify(data));
-    return;
-  }
-
-  const context = (error as any).context;
-  let result: any = null;
-
-  if (context && typeof context.clone === "function") {
-    try {
-      result = await context.clone().json();
-    } catch {
-      // La respuesta no contiene JSON legible.
-    }
-  }
-
-  if (
-    context?.status === 409 &&
-    result?.code === "SII_ADAPTER_NOT_READY"
-  ) {
-    setNotice(
-      "Conexión autenticada correcta. La emisión oficial sigue bloqueada."
-    );
-    return;
-  }
-
-  setDteError(
-    "Error dte-issue: " +
-      (result?.code ?? error.message ?? "Error desconocido")
-  );
+async async function testDteConnection() {
+  if (dteTesting || dteLoading || dteSaving || dteCreating) return;
+  setDteTesting(true); setDteError(""); setNotice("");
+  try {
+    const { data, error } = await supabase.functions.invoke("dte-issue", {
+      body: { document_type: 39, idempotency_key: crypto.randomUUID() },
+    });
+    if (!error) { setNotice("La función dte-issue respondió correctamente. Respuesta: " + JSON.stringify(data)); return; }
+    const context = (error as any).context;
+    let details: any = null;
+    const status: number | undefined = typeof context?.status === "number" ? context.status : undefined;
+    if (context && typeof context.clone === "function") { try { details = await context.clone().json(); } catch { details = null; } }
+    const code = details?.code ?? details?.error ?? "";
+    const message = details?.message ?? details?.error_description ?? error.message ?? "Sin detalles adicionales.";
+    if (status === 409 && code === "SII_ADAPTER_NOT_READY") { setNotice("La función dte-issue respondió, pero el adaptador de emisión oficial al SII todavía no está implementado o habilitado. Esta respuesta no acredita una emisión real."); return; }
+    if (status === 401 || status === 403 || code === "AUTHORIZATION_REQUIRED") { setDteError("Supabase rechazó la autorización. Verifica la sesión y la configuración de autorización de la función."); return; }
+    if (!context && /fetch|network|failed to send/i.test(error.message ?? "")) { setDteError("No se pudo alcanzar dte-issue. Revisa Internet, la URL de Supabase y que la función esté desplegada."); return; }
+    setDteError(["Falló la prueba de dte-issue.", status ? `HTTP ${status}.` : "", code ? `Código: ${code}.` : "", message].filter(Boolean).join(" "));
+  } catch (err) {
+    setDteError("No se pudo completar la prueba: " + (err instanceof Error ? err.message : "Error inesperado."));
+  } finally { setDteTesting(false); }
 }
  async function createDteSimulation(e:FormEvent<HTMLFormElement>){
  e.preventDefault();
@@ -165,7 +143,7 @@ function openSupplier(s?:Supplier){setEditingSupplier(s??null);setSupplierName(s
  <label>Ciudad<input value={dteCity} onChange={e=>setDteCity(e.target.value)} placeholder="Ciudad"/></label>
  <label>Fecha resolución SII<input type="date" value={dteResolutionDate} onChange={e=>setDteResolutionDate(e.target.value)}/></label>
  <label>N.º resolución SII<input value={dteResolutionNumber} onChange={e=>setDteResolutionNumber(e.target.value)} placeholder="Número de resolución"/></label>
- <div className="form-actions"><button className="button primary" type="submit" disabled={dteSaving}>{dteSaving?"Guardando…":"Guardar configuración"}</button><button className="button secondary" type="button" onClick={()=>void loadDte()} disabled={dteLoading}>↻ Actualizar</button></div>
+ <div className="form-actions"><button className="button primary" type="submit" disabled={dteSaving || dteTesting}>{dteSaving ? "Guardando…" : "Guardar configuración"}</button><button className="button secondary" type="button" onClick={() => void loadDte()} disabled={dteLoading || dteSaving || dteTesting}>{dteLoading ? "Actualizando…" : "↻ Actualizar"}</button><button className="button secondary" type="button" onClick={() => void testDteConnection()} disabled={dteTesting || dteLoading || dteSaving || dteCreating}>{dteTesting ? "Probando conexión…" : "Probar conexión"}</button></div>
  </form><div className="integration-note">Esta pantalla configura el emisor y consulta registros reales. La simulación solo guarda borradores de prueba. No firma XML, no usa CAF/folios oficiales y no transmite documentos al SII. El ambiente de producción está bloqueado en este motor.</div>
  </section>
  <section className="panel"><PanelTitle title="Crear simulación DTE" subtitle="Valida datos y calcula montos; no genera un documento tributario oficial"/><form className="form-grid" onSubmit={createDteSimulation}><label>Tipo de documento<select value={dteType} onChange={e=>{const t=Number(e.target.value) as DteType;setDteType(t);if(t===39||t===41){setDteReceiverName("Consumidor final");}}}><option value={39}>39 · Boleta afecta</option><option value={41}>41 · Boleta exenta</option><option value={33}>33 · Factura afecta</option><option value={34}>34 · Factura exenta</option></select></label><label>RUT receptor {dteType===33||dteType===34?"(obligatorio)":"(opcional)"}<input value={dteReceiverRut} onChange={e=>setDteReceiverRut(e.target.value)} placeholder="12.345.678-5"/></label><label>Nombre / razón social<input value={dteReceiverName} onChange={e=>setDteReceiverName(e.target.value)} placeholder="Consumidor final o razón social"/></label><label>Detalle del producto o servicio<input value={dteItemName} onChange={e=>setDteItemName(e.target.value)} required/></label><label>Cantidad<input type="number" min="0.001" step="0.001" value={dteQuantity} onChange={e=>setDteQuantity(e.target.value)} required/></label><label>Precio unitario CLP<input type="number" min="0" step="1" value={dteUnitPrice} onChange={e=>setDteUnitPrice(e.target.value)} required/></label><label className="checkbox-label"><input type="checkbox" checked={dteExempt} onChange={e=>setDteExempt(e.target.checked)}/> Línea exenta de IVA</label><div className="form-actions"><button className="button primary" type="submit" disabled={dteCreating||dteLoading}>{dteCreating?"Validando y guardando…":"Validar y guardar simulación"}</button></div></form>{dteSimulationXml&&<><div className="notice warning">Simulación guardada. XML interno de prueba: no es XML oficial SII, no está firmado y no tiene folio autorizado.</div><textarea className="dte-xml-preview" value={dteSimulationXml} readOnly rows={10} aria-label="XML de simulación"/></>}</section>
