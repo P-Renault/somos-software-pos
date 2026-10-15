@@ -1,74 +1,42 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 
 /**
- * BOOM POS — DTE issue function
- *
- * CORS is restricted to the deployed frontend origin.
- * Authentication remains enabled at the Supabase platform level (verify_jwt).
- * This endpoint intentionally does NOT issue or transmit official SII documents.
+ * BOOM POS — dte-issue
+ * CORS: Supabase SDK default headers.
+ * Keep verify_jwt enabled in Supabase.
+ * Official SII issuance remains intentionally disabled until a real adapter
+ * (XML/XSD, XMLDSIG, CAF/folios, SII authentication/transmission/status) exists.
  */
 
-const FRONTEND_ORIGIN = "https://somos-software-pos.vercel.app";
-const configuredOrigin = Deno.env.get("DTE_ALLOWED_ORIGIN")?.trim();
-const allowedOrigin = configuredOrigin || FRONTEND_ORIGIN;
-
-const corsHeaders = {
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, idempotency-key, x-supabase-api-version, x-requested-with",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Max-Age": "86400",
-  "Vary": "Origin",
-};
-
-function responseHeaders(origin?: string | null): Headers {
+function responseHeaders(): Headers {
   const headers = new Headers(corsHeaders);
-
-  if (origin && origin === allowedOrigin) {
-    headers.set("Access-Control-Allow-Origin", allowedOrigin);
-  }
-
+  headers.set("Content-Type", "application/json; charset=utf-8");
   return headers;
 }
 
 function respond(
   status: number,
   body: Record<string, unknown>,
-  origin?: string | null,
 ): Response {
-  const headers = responseHeaders(origin);
-  headers.set("Content-Type", "application/json; charset=utf-8");
-
-  return new Response(JSON.stringify(body), { status, headers });
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: responseHeaders(),
+  });
 }
 
 Deno.serve(async (req: Request) => {
-  const origin = req.headers.get("Origin");
-
-  // CORS preflight must be handled before request validation.
+  // Use the SDK's maintained CORS headers. Do not reject OPTIONS based on
+  // a missing Origin header; browsers may omit it in some preflight contexts.
   if (req.method === "OPTIONS") {
-    const headers = responseHeaders(origin);
-
-    if (!origin || origin !== allowedOrigin) {
-      // Do not authorize unknown browser origins.
-      return new Response(null, { status: 403, headers });
-    }
-
-    return new Response(null, { status: 204, headers });
-  }
-
-  // Restrict browser requests to the configured frontend origin.
-  if (origin && origin !== allowedOrigin) {
-    return respond(403, {
-      ok: false,
-      code: "ORIGIN_NOT_ALLOWED",
-    }, origin);
+    return new Response("ok", { status: 200, headers: corsHeaders });
   }
 
   if (req.method !== "POST") {
     return respond(405, {
       ok: false,
       code: "METHOD_NOT_ALLOWED",
-    }, origin);
+    });
   }
 
   const authorization = req.headers.get("Authorization");
@@ -77,7 +45,7 @@ Deno.serve(async (req: Request) => {
     return respond(401, {
       ok: false,
       code: "AUTH_REQUIRED",
-    }, origin);
+    });
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL");
@@ -89,7 +57,7 @@ Deno.serve(async (req: Request) => {
     return respond(503, {
       ok: false,
       code: "SERVER_NOT_CONFIGURED",
-    }, origin);
+    });
   }
 
   const supabase = createClient(supabaseUrl, supabaseAnonKey, {
@@ -103,7 +71,7 @@ Deno.serve(async (req: Request) => {
   });
 
   try {
-    // 1. Validate the authenticated user.
+    // 1. Validate authenticated user session.
     const { data: authData, error: authError } =
       await supabase.auth.getUser();
 
@@ -111,7 +79,7 @@ Deno.serve(async (req: Request) => {
       return respond(401, {
         ok: false,
         code: "INVALID_SESSION",
-      }, origin);
+      });
     }
 
     // 2. Validate request JSON.
@@ -128,7 +96,7 @@ Deno.serve(async (req: Request) => {
         return respond(400, {
           ok: false,
           code: "INVALID_BODY",
-        }, origin);
+        });
       }
 
       body = parsed as Record<string, unknown>;
@@ -136,10 +104,10 @@ Deno.serve(async (req: Request) => {
       return respond(400, {
         ok: false,
         code: "INVALID_JSON",
-      }, origin);
+      });
     }
 
-    // 3. Validate document type.
+    // 3. Validate supported document type.
     const documentType = Number(body.document_type);
     const supportedTypes = [33, 34, 39, 41];
 
@@ -148,10 +116,10 @@ Deno.serve(async (req: Request) => {
         ok: false,
         code: "UNSUPPORTED_DOCUMENT_TYPE",
         allowed_document_types: supportedTypes,
-      }, origin);
+      });
     }
 
-    // 4. Require an idempotency UUID.
+    // 4. Require idempotency UUID.
     const idempotencyKey = String(
       req.headers.get("Idempotency-Key") ??
         body.idempotency_key ??
@@ -165,11 +133,10 @@ Deno.serve(async (req: Request) => {
       return respond(400, {
         ok: false,
         code: "IDEMPOTENCY_KEY_REQUIRED",
-      }, origin);
+      });
     }
 
-    // 5. Resolve company from the authenticated user's profile.
-    // Never trust a company_id supplied by the browser.
+    // 5. Resolve company from authenticated user's profile.
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("company_id")
@@ -180,7 +147,7 @@ Deno.serve(async (req: Request) => {
       return respond(403, {
         ok: false,
         code: "COMPANY_REQUIRED",
-      }, origin);
+      });
     }
 
     const companyId = profile.company_id;
@@ -201,7 +168,7 @@ Deno.serve(async (req: Request) => {
       return respond(503, {
         ok: false,
         code: "DTE_STORAGE_UNAVAILABLE",
-      }, origin);
+      });
     }
 
     if (existing) {
@@ -210,10 +177,10 @@ Deno.serve(async (req: Request) => {
         reused: true,
         job: existing,
         message: "Se recuperó la solicitud existente.",
-      }, origin);
+      });
     }
 
-    // 7. Read the company's tax configuration.
+    // 7. Read tax configuration for this company.
     const { data: settings, error: settingsError } = await supabase
       .from("dte_company_settings")
       .select(
@@ -228,7 +195,7 @@ Deno.serve(async (req: Request) => {
       return respond(503, {
         ok: false,
         code: "DTE_SETTINGS_UNAVAILABLE",
-      }, origin);
+      });
     }
 
     const missing: string[] = [];
@@ -245,8 +212,8 @@ Deno.serve(async (req: Request) => {
       missing.push("caf_not_configured");
     }
 
-    // 8. Deliberately block official issuance until the real SII adapter
-    // is implemented. No DTE, official folio, or SII transmission is created.
+    // 8. Intentionally block official issuance until a real SII adapter
+    // is implemented. This endpoint does not create or transmit an official DTE.
     return respond(409, {
       ok: false,
       code: "SII_ADAPTER_NOT_READY",
@@ -258,7 +225,7 @@ Deno.serve(async (req: Request) => {
         "esquema XSD, firma XMLDSIG, CAF y folios autorizados, " +
         "autenticación, transmisión y consulta de estado del SII. " +
         "No se generó ni transmitió ningún DTE.",
-    }, origin);
+    });
   } catch (error) {
     console.error("dte-issue internal error", error);
 
@@ -266,6 +233,6 @@ Deno.serve(async (req: Request) => {
       ok: false,
       code: "INTERNAL_ERROR",
       message: "Error interno al validar la solicitud DTE.",
-    }, origin);
+    });
   }
 });
