@@ -1,0 +1,9 @@
+# BOOM POS — Supabase project configuration
+# Project reference: ywwdclmtvvextgemyqha
+# Function dte-issue requires a valid Supabase user JWT.
+# Keep JWT verification enabled for production security.
+
+project_id = "ywwdclmtvvextgemyqha"
+
+[functions.dte-issue]
+verify_jwt = true
