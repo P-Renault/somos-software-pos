@@ -33,6 +33,51 @@ export default function PosShell({user,company}:P){
  async function loadSuppliers(){if(!company.id)return;setSupplierLoading(true);const {data,error}=await supabase.from("suppliers").select("id,name,tax_id,contact_name,phone,email,address,active").eq("company_id",company.id).eq("active",true).order("name");if(error){setNotice("No se pudieron cargar los proveedores: "+error.message);}else setSuppliers((data??[]) as Supplier[]);setSupplierLoading(false);}
  async function loadPurchases(){if(!company.id)return;setPurchaseLoading(true);const {data,error}=await supabase.from("purchases").select("id,document_number,purchase_date,status,total,supplier_id,suppliers(name),purchase_items(id)").eq("company_id",company.id).order("created_at",{ascending:false}).limit(100);if(error){setNotice("No se pudieron cargar las compras: "+error.message);}else setPurchases((data??[]).map((r:any)=>({id:r.id,document_number:r.document_number,purchase_date:r.purchase_date,status:r.status,total:Number(r.total??0),supplier_id:r.supplier_id,supplier_name:r.suppliers?.name??"Proveedor",item_count:r.purchase_items?.length??0})));setPurchaseLoading(false);}
  async function loadDte(){if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}setDteLoading(true);setDteError("");const [sr,dr]=await Promise.all([supabase.from("dte_company_settings").select("*").eq("company_id",company.id).maybeSingle(),supabase.from("dte_documents").select("id,document_type,folio,environment,status,receiver_rut,receiver_name,issue_date,total_amount,sii_track_id,sii_status_message").eq("company_id",company.id).order("created_at",{ascending:false}).limit(100)]);if(sr.error){setDteError("Error de configuración: "+sr.error.message);setDteSettings(null);}else if(sr.data){const d=sr.data as DteSetting;setDteSettings(d);setDteEnvironment("certification");setDteRut(d.issuer_rut??company.taxId??"");setDteLegalName(d.legal_name??company.name??"");setDteActivity(d.business_activity??"");setDteAddress(d.business_address??"");setDteCommune(d.commune??"");setDteCity(d.city??"");setDteResolutionDate(d.resolution_date??"");setDteResolutionNumber(d.resolution_number??"");}else{setDteSettings(null);setDteRut(company.taxId??"");setDteLegalName(company.name??"");}if(dr.error){setDteError(prev=>[prev,"Error al consultar documentos: "+dr.error.message].filter(Boolean).join(" "));setDteDocuments([]);}else setDteDocuments((dr.data??[]) as DteDocument[]);setDteLoading(false);}
+async function testDteConnection() {
+  setDteError("");
+  setNotice("");
+
+  const { data, error } = await supabase.functions.invoke(
+    "dte-issue",
+    {
+      body: {
+        document_type: 39,
+        idempotency_key: crypto.randomUUID()
+      }
+    }
+  );
+
+  if (!error) {
+    setNotice("Respuesta de dte-issue: " + JSON.stringify(data));
+    return;
+  }
+
+  const context = (error as any).context;
+  let result: any = null;
+
+  if (context && typeof context.clone === "function") {
+    try {
+      result = await context.clone().json();
+    } catch {
+      // La respuesta no contiene JSON legible.
+    }
+  }
+
+  if (
+    context?.status === 409 &&
+    result?.code === "SII_ADAPTER_NOT_READY"
+  ) {
+    setNotice(
+      "Conexión autenticada correcta. La emisión oficial sigue bloqueada."
+    );
+    return;
+  }
+
+  setDteError(
+    "Error dte-issue: " +
+      (result?.code ?? error.message ?? "Error desconocido")
+  );
+}
  async function createDteSimulation(e:FormEvent<HTMLFormElement>){
  e.preventDefault();
  if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}
