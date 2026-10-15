@@ -8,7 +8,7 @@ type Product={id:string;name:string;category:string;price:number;cost:number;sto
 type Supplier={id:string;name:string;tax_id:string|null;contact_name:string|null;phone:string|null;email:string|null;address:string|null;active:boolean};
 type Purchase={id:string;document_number:string;purchase_date:string;status:string;total:number; supplier_id:string; supplier_name?:string; item_count?:number};
 type DteSetting={id?:string;company_id:string;environment:"certification"|"production";issuer_rut:string|null;legal_name:string|null;business_activity:string|null;business_address:string|null;commune:string|null;city:string|null;resolution_date:string|null;resolution_number:string|null;enabled:boolean;certificate_configured:boolean;caf_configured:boolean};
-type DteDocument={id:string;document_type:number;folio:number|null;environment:string;status:string;receiver_rut:string|null;receiver_name:string|null;issue_date:string;total_amount:number;track_id:string|null;error_message:string|null};
+type DteDocument={id:string;document_type:number;folio:number|null;environment:string;status:string;receiver_rut:string|null;receiver_name:string|null;issue_date:string;total_amount:number;sii_track_id:string|null;sii_status_message:string|null};
 const nav:{name:M;icon:string}[]=[["Inicio","⌂"],["Ventas","🛒"],["Productos","◇"],["Inventario","▱"],["Compras","▤"],["Proveedores","♧"],["Clientes","♙"],["Caja","▣"],["Facturación","▧"],["DTE / SII","▤"],["Reportes","▥"],["Finanzas","↗"],["Configuración","⚙"]].map(([name,icon])=>({name:name as M,icon}));
 const clp=(n:number)=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n);
 const rows:Record<string,string[][]>={
