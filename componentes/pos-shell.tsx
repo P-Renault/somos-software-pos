@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { buildSimulationXml, calculateDteTotals, formatRut, validateDte, type DteType } from "@/lib/dte-engine";
+import { buildSimulationXml, calculateDteTotals, formatRut, isValidRut, validateDte, type DteType } from "@/lib/dte-engine";
 type M="Inicio"|"Ventas"|"Productos"|"Inventario"|"Compras"|"Proveedores"|"Clientes"|"Caja"|"Facturación"|"DTE / SII"|"Reportes"|"Finanzas"|"Configuración";
 type P={user:{email:string;name:string;role:string};company:{id:string;name:string;taxId:string}};
 type Product={id:string;name:string;category:string;price:number;cost:number;stock:number;min:number;barcode:string;photo:string;sku?:string;description?:string};
@@ -33,8 +33,48 @@ export default function PosShell({user,company}:P){
  async function loadSuppliers(){if(!company.id)return;setSupplierLoading(true);const {data,error}=await supabase.from("suppliers").select("id,name,tax_id,contact_name,phone,email,address,active").eq("company_id",company.id).eq("active",true).order("name");if(error){setNotice("No se pudieron cargar los proveedores: "+error.message);}else setSuppliers((data??[]) as Supplier[]);setSupplierLoading(false);}
  async function loadPurchases(){if(!company.id)return;setPurchaseLoading(true);const {data,error}=await supabase.from("purchases").select("id,document_number,purchase_date,status,total,supplier_id,suppliers(name),purchase_items(id)").eq("company_id",company.id).order("created_at",{ascending:false}).limit(100);if(error){setNotice("No se pudieron cargar las compras: "+error.message);}else setPurchases((data??[]).map((r:any)=>({id:r.id,document_number:r.document_number,purchase_date:r.purchase_date,status:r.status,total:Number(r.total??0),supplier_id:r.supplier_id,supplier_name:r.suppliers?.name??"Proveedor",item_count:r.purchase_items?.length??0})));setPurchaseLoading(false);}
  async function loadDte(){if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}setDteLoading(true);setDteError("");const [sr,dr]=await Promise.all([supabase.from("dte_company_settings").select("*").eq("company_id",company.id).maybeSingle(),supabase.from("dte_documents").select("id,document_type,folio,environment,status,receiver_rut,receiver_name,issue_date,total_amount,sii_track_id,sii_status_message").eq("company_id",company.id).order("created_at",{ascending:false}).limit(100)]);if(sr.error){setDteError("Error de configuración: "+sr.error.message);setDteSettings(null);}else if(sr.data){const d=sr.data as DteSetting;setDteSettings(d);setDteEnvironment("certification");setDteRut(d.issuer_rut??company.taxId??"");setDteLegalName(d.legal_name??company.name??"");setDteActivity(d.business_activity??"");setDteAddress(d.business_address??"");setDteCommune(d.commune??"");setDteCity(d.city??"");setDteResolutionDate(d.resolution_date??"");setDteResolutionNumber(d.resolution_number??"");}else{setDteSettings(null);setDteRut(company.taxId??"");setDteLegalName(company.name??"");}if(dr.error){setDteError(prev=>[prev,"Error al consultar documentos: "+dr.error.message].filter(Boolean).join(" "));setDteDocuments([]);}else setDteDocuments((dr.data??[]) as DteDocument[]);setDteLoading(false);}
- async function createDteSimulation(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}const lines=[{name:dteItemName,quantity:Number(dteQuantity),unitPrice:Number(dteUnitPrice),exempt:dteExempt}];const input={documentType:dteType,issuerRut:dteRut,receiverRut:dteReceiverRut,receiverName:dteReceiverName,lines};const errors=validateDte(input);if(errors.length){setDteError(errors.join(" "));return;}if(dteEnvironment!=="certification"){setDteError("El motor solo permite simulaciones en ambiente de certificación. Producción está bloqueada.");return;}const totals=calculateDteTotals(lines,dteType);const issueDate=new Date().toISOString().slice(0,10);const xml=buildSimulationXml(input,totals,issueDate);setDteCreating(true);setDteError("");setDteSimulationXml("");const {data:auth}=await supabase.auth.getUser();const {data:doc,error}=await supabase.from("dte_documents").insert({company_id:company.id,document_type:dteType,status:"draft",environment:"certification",folio:null,issue_date:issueDate,receiver_rut:dteReceiverRut.trim()?formatRut(dteReceiverRut):null,receiver_name:dteReceiverName.trim()||"Consumidor final",currency:"CLP",net_amount:totals.net,exempt_amount:totals.exempt,iva_rate:19,iva_amount:totals.tax,other_tax_amount:0,total_amount:totals.total,xml_unsigned:xml,created_by:auth.user?.id??null,idempotency_key:crypto.randomUUID()}).select("id").single();if(error||!doc){setDteError("No se pudo guardar la simulación: "+(error?.message??"No se recibió el documento creado."));setDteCreating(false);return;}const itemAmount=Math.round(lines[0].quantity*lines[0].unitPrice);const isExempt=lines[0].exempt||dteType===34||dteType===41;const itemResult=await supabase.from("dte_document_items").insert({company_id:company.id,dte_document_id:doc.id,line_number:1,item_name:dteItemName.trim(),quantity:Number(dteQuantity),unit_price:Number(dteUnitPrice),exempt:isExempt,line_net_amount:isExempt?0:itemAmount,line_exempt_amount:isExempt?itemAmount:0,line_iva_amount:isExempt?0:Math.round(itemAmount*0.19),line_total:isExempt?itemAmount:itemAmount+Math.round(itemAmount*0.19)});if(itemResult.error){setDteError("El documento quedó guardado como borrador, pero falló el detalle: "+itemResult.error.message);setDteCreating(false);await loadDte();return;}const eventResult=await supabase.from("dte_events").insert({company_id:company.id,dte_document_id:doc.id,event_type:"simulation_created",from_status:null,to_status:"draft",message:"Simulación interna creada. No es un DTE oficial y no fue enviada al SII.",metadata:{simulation:true,totals},actor_id:auth.user?.id??null});if(eventResult.error){setDteError("Simulación guardada con detalle; no se pudo registrar el evento: "+eventResult.error.message);}setDteSimulationXml(xml);setDteCreating(false);setNotice("Simulación DTE guardada como borrador. No se asignó folio ni se envió al SII.");await loadDte();}
- async function saveDteSettings(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}setDteSaving(true);setDteError("");const payload={company_id:company.id,environment:"certification",enabled:false,certificate_configured:false,caf_configured:false,issuer_rut:dteRut.trim()||null,legal_name:dteLegalName.trim()||null,business_activity:dteActivity.trim()||null,business_address:dteAddress.trim()||null,commune:dteCommune.trim()||null,city:dteCity.trim()||null,resolution_date:dteResolutionDate||null,resolution_number:dteResolutionNumber.trim()||null};const {error}=await supabase.from("dte_company_settings").upsert(payload,{onConflict:"company_id"});setDteSaving(false);if(error){setDteError("No se pudo guardar: "+error.message);return;}setNotice("Configuración tributaria guardada.");await loadDte();}
+ async function createDteSimulation(e:FormEvent<HTMLFormElement>){
+ e.preventDefault();
+ if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}
+ const lines=[{name:dteItemName.trim(),quantity:Number(dteQuantity),unitPrice:Number(dteUnitPrice),exempt:dteExempt}];
+ const input={documentType:dteType,issuerRut:dteRut,receiverRut:dteReceiverRut,receiverName:dteReceiverName,lines};
+ const errors=validateDte(input);
+ if(errors.length){setDteError(errors.join(" "));return;}
+ if(dteEnvironment!=="certification"){setDteError("El motor solo permite simulaciones en ambiente de certificación. Producción está bloqueada.");return;}
+ const totals=calculateDteTotals(lines,dteType);
+ const issueDate=new Date().toISOString().slice(0,10);
+ const xml=buildSimulationXml(input,totals,issueDate);
+ const lineAmount=Math.round(lines[0].quantity*lines[0].unitPrice);
+ const lineExempt=lines[0].exempt||dteType===34||dteType===41;
+ const lineTax=lineExempt?0:Math.round(lineAmount*0.19);
+ const idempotencyKey=crypto.randomUUID();
+ const rpcLines=[{name:lines[0].name,quantity:lines[0].quantity,unitPrice:lines[0].unitPrice,exempt:lineExempt,netAmount:lineExempt?0:lineAmount,exemptAmount:lineExempt?lineAmount:0,ivaAmount:lineTax,totalAmount:lineAmount+lineTax}];
+ setDteCreating(true);setDteError("");setDteSimulationXml("");
+ try {
+   const {data:docId,error}=await supabase.rpc("create_dte_simulation_atomic",{
+     p_company_id:company.id,
+     p_document_type:dteType,
+     p_issuer_rut:formatRut(dteRut),
+     p_receiver_rut:dteReceiverRut.trim()?formatRut(dteReceiverRut):null,
+     p_receiver_name:dteReceiverName.trim()||"Consumidor final",
+     p_issue_date:issueDate,
+     p_net_amount:totals.net,
+     p_exempt_amount:totals.exempt,
+     p_iva_amount:totals.tax,
+     p_total_amount:totals.total,
+     p_xml_unsigned:xml,
+     p_idempotency_key:idempotencyKey,
+     p_lines:rpcLines
+   });
+   if(error||!docId){setDteError("No se pudo guardar la simulación atómicamente: "+(error?.message??"Supabase no devolvió el identificador."));return;}
+   setDteSimulationXml(xml);
+   setNotice("Simulación DTE guardada con detalle y trazabilidad en una sola transacción. Sin folio ni envío al SII.");
+   await loadDte();
+ } catch(err) {
+   setDteError("No se pudo guardar la simulación: "+(err instanceof Error?err.message:"Error inesperado."));
+ } finally {setDteCreating(false);}
+}
+ async function saveDteSettings(e:FormEvent<HTMLFormElement>){e.preventDefault();if(!company.id){setDteError("No hay una empresa asociada al usuario.");return;}if(!isValidRut(dteRut)){setDteError("El RUT emisor no es válido. Verifica el RUT legal de Somos Software E.I.R.L. antes de guardar.");return;}if(!dteLegalName.trim()){setDteError("Ingresa la razón social legal del emisor.");return;}setDteSaving(true);setDteError("");const payload={company_id:company.id,environment:"certification",enabled:false,certificate_configured:false,caf_configured:false,issuer_rut:dteRut.trim()||null,legal_name:dteLegalName.trim()||null,business_activity:dteActivity.trim()||null,business_address:dteAddress.trim()||null,commune:dteCommune.trim()||null,city:dteCity.trim()||null,resolution_date:dteResolutionDate||null,resolution_number:dteResolutionNumber.trim()||null};const {error}=await supabase.from("dte_company_settings").upsert(payload,{onConflict:"company_id"});setDteSaving(false);if(error){setDteError("No se pudo guardar: "+error.message);return;}setNotice("Configuración tributaria guardada.");await loadDte();}
  useEffect(()=>{if(["Productos","Ventas","Inventario"].includes(active)){void loadProducts();}if(active==="Proveedores")void loadSuppliers();if(active==="Compras") {void loadSuppliers();void loadPurchases();}if(active==="DTE / SII")void loadDte();},[active,company.id]);
  const filtered=useMemo(()=>products.filter(p=>(cat==="Todos"||p.category===cat)&&`${p.name} ${p.sku??""} ${p.id} ${p.barcode} ${p.category}`.toLowerCase().includes(query.toLowerCase())),[products,cat,query]);
  function openNewProduct(){setEditingProduct(null);setName("");setSku("");setCategory("");setDescription("");setPrice("");setCost("");setStock("0");setMinStock("0");setBarcode("");setNewProduct(true);}
