@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import PosShell from "@/componentes/pos-shell";
+import PosShell from "@/component/pos-shell";
 
 export default async function Home() {
   const supabase = await createClient();
