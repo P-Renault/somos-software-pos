@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-type Product={id:string;name:string;sale_price:number;stock:number;barcode:string|null;sku:string|null;category:string|null};
+type Product={id:string;name:string;sale_price:number;stock:number;barcode:string|null;sku:string|null};
 type Line={id:string;qty:number};
 type Method="cash"|"debit"|"credit"|"transfer"|"credit_account"|"mixed";
 type Props={companyId:string;onNotice?:(message:string)=>void};
