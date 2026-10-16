@@ -1,43 +1,24 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import PosShell from "@/component/pos-shell";
+import PosShell from "@/componentes/pos-shell";
 
 export default async function Home() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("full_name, role, company_id")
     .eq("id", user.id)
     .maybeSingle();
+  if (profileError) throw new Error(`No se pudo cargar el perfil: ${profileError.message}`);
 
   const companyId = profile?.company_id ?? "";
-  const { data: company } = companyId
-    ? await supabase
-        .from("companies")
-        .select("name, tax_id")
-        .eq("id", companyId)
-        .maybeSingle()
-    : { data: null };
+  const { data: company, error: companyError } = companyId
+    ? await supabase.from("companies").select("name, tax_id").eq("id", companyId).maybeSingle()
+    : { data: null, error: null };
+  if (companyError) throw new Error(`No se pudo cargar la empresa: ${companyError.message}`);
 
-  return (
-    <PosShell
-      user={{
-        email: user.email ?? "",
-        name:
-          profile?.full_name ?? user.email?.split("@")[0] ?? "Usuario",
-        role: profile?.role ?? "owner",
-      }}
-      company={{
-        id: companyId,
-        name: company?.name ?? "Mi empresa",
-        taxId: company?.tax_id ?? "",
-      }}
-    />
-  );
+  return <PosShell user={{ email: user.email ?? "", name: profile?.full_name ?? user.email?.split("@")[0] ?? "Usuario", role: profile?.role ?? "owner" }} company={{ id: companyId, name: company?.name ?? "Mi empresa", taxId: company?.tax_id ?? "" }} />;
 }
