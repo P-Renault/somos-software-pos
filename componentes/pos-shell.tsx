@@ -21,7 +21,7 @@ export default function PosShell({companyId,onNotice}:Props){
  const [cashPart,setCashPart]=useState(""),[otherPart,setOtherPart]=useState(""),[otherMethod,setOtherMethod]=useState<"debit"|"credit"|"transfer">("debit");
  const [otherProvider,setOtherProvider]=useState("Transbank"),[otherOperation,setOtherOperation]=useState(""),[otherReference,setOtherReference]=useState("");
  const [receipt,setReceipt]=useState<any>(null);
- async function load(){if(!companyId){setError("No hay empresa asociada a la sesión.");return;}setLoading(true);setError("");const {data,error}=await supabase.from("products").select("id,name,sale_price,stock,barcode,sku,category").eq("company_id",companyId).eq("active",true).order("name");if(error)setError("No se pudo cargar catálogo: "+error.message);else setProducts((data??[]) as Product[]);setLoading(false);}
+ async function load(){if(!companyId){setError("No hay empresa asociada a la sesión.");return;}setLoading(true);setError("");const {data,error}=await supabase.from("products").select("id,name,sale_price,stock,barcode,sku").eq("company_id",companyId).eq("active",true).order("name");if(error)setError("No se pudo cargar catálogo: "+error.message);else setProducts((data??[]) as Product[]);setLoading(false);}
  useEffect(()=>{void load();},[companyId]);
  const lines=useMemo(()=>cart.map(c=>{const p=products.find(x=>x.id===c.id);return p?{...p,qty:c.qty,lineTotal:Number(p.sale_price)*c.qty}:null}).filter(Boolean) as (Product&{qty:number;lineTotal:number})[],[cart,products]);
  const total=lines.reduce((s,p)=>s+p.lineTotal,0),receivedN=Number(received||0),change=Math.max(0,receivedN-total),cashN=Number(cashPart||0),otherN=Number(otherPart||0);
