@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { getOfflineCatalog, getOfflineSales, saveOfflineCatalog, saveOfflineSales, type OfflineSaleRecord } from "@/lib/offline-storage";
 
 type Product={id:string;name:string;sale_price:number;stock:number;barcode:string|null;sku:string|null};
 type Line={id:string;qty:number};
@@ -8,12 +9,7 @@ type Method="cash"|"debit"|"credit"|"transfer"|"credit_account"|"mixed";
 type Props={companyId:string;onNotice?:(message:string)=>void};
 type SaleRpcArgs={p_idempotency_key:string;p_items:{product_id:string;quantity:number}[];p_payment_method:Method;p_customer_name:string;p_customer_rut:string|null;p_document_type:number;p_cash_received:number;p_payments:any[]};
 type PendingSale={companyId:string;args:SaleRpcArgs;customer:string;docType:number;createdAt:string};
-type OfflineSale=PendingSale & {localId:string;status:"queued"|"syncing";lastError?:string};
 const pendingStorageKey=(companyId:string)=>`boom-pos:pending-sale:${companyId}`;
-const offlineQueueKey=(companyId:string)=>`boom-pos:offline-sales:${companyId}`;
-const catalogCacheKey=(companyId:string)=>`boom-pos:catalog:${companyId}`;
-function readQueue(companyId:string):OfflineSale[]{try{const value=JSON.parse(window.localStorage.getItem(offlineQueueKey(companyId))||"[]");return Array.isArray(value)?value.filter((x:any)=>x?.companyId===companyId&&x?.args?.p_idempotency_key):[];}catch{return [];}}
-function writeQueue(companyId:string,queue:OfflineSale[]){window.localStorage.setItem(offlineQueueKey(companyId),JSON.stringify(queue));}
 const clp=(n:number)=>new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0}).format(n);
 
 /** Panel de ventas integrado al RPC. Montar desde el shell existente con companyId={company.id}.
@@ -30,20 +26,20 @@ export default function PosShell({companyId,onNotice}:Props){
  const [otherProvider,setOtherProvider]=useState("Transbank"),[otherOperation,setOtherOperation]=useState(""),[otherReference,setOtherReference]=useState("");
  const [receipt,setReceipt]=useState<any>(null),[idempotencyKey,setIdempotencyKey]=useState("");
  const [pendingSale,setPendingSale]=useState<PendingSale|null>(null),[restoredPending,setRestoredPending]=useState(false),[recoveryBlocked,setRecoveryBlocked]=useState(false);
- const [online,setOnline]=useState(true),[offlineQueue,setOfflineQueue]=useState<OfflineSale[]>([]),[syncingOffline,setSyncingOffline]=useState(false);
+ const [online,setOnline]=useState(true),[offlineQueue,setOfflineQueue]=useState<OfflineSaleRecord[]>([]),[syncingOffline,setSyncingOffline]=useState(false);
  async function load(){if(!companyId){setError("No hay empresa asociada a la sesión.");return;}setLoading(true);setError("");
   try{const {data,error}=await supabase.from("products").select("id,name,sale_price,stock,barcode,sku,active").eq("company_id",companyId).eq("active",true).order("name");
    if(error)throw error;
-   const queue=typeof window!=="undefined"?readQueue(companyId):[];
+   const queue=typeof window!=="undefined"?await getOfflineSales(companyId):[];
    const reserved=new Map<string,number>();for(const sale of queue){for(const item of sale.args.p_items){reserved.set(item.product_id,(reserved.get(item.product_id)||0)+item.quantity);}}
    const normalized=((data??[]) as Product[]).map(p=>({...p,stock:Math.max(0,Number(p.stock)-(reserved.get(p.id)||0))}));
-   setProducts(normalized);window.localStorage.setItem(catalogCacheKey(companyId),JSON.stringify(data??[]));
-  }catch(e){try{const cached=JSON.parse(window.localStorage.getItem(catalogCacheKey(companyId))||"[]") as Product[];if(!Array.isArray(cached)||!cached.length)throw new Error("no-cache");const queue=readQueue(companyId);const reserved=new Map<string,number>();for(const sale of queue){for(const item of sale.args.p_items)reserved.set(item.product_id,(reserved.get(item.product_id)||0)+item.quantity);}setProducts(cached.map(p=>({...p,stock:Math.max(0,Number(p.stock)-(reserved.get(p.id)||0))})));setError("Sin conexión: catálogo local. El stock puede estar desactualizado.");}catch{setError("No se pudo cargar el catálogo ni existe una copia local. Conéctate para cargarlo por primera vez.");}}
+   setProducts(normalized);await saveOfflineCatalog(companyId,(data??[]) as Product[]);
+  }catch(e){try{const cached=await getOfflineCatalog<Product>(companyId);if(!Array.isArray(cached)||!cached.length)throw new Error("no-cache");const queue=await getOfflineSales(companyId);const reserved=new Map<string,number>();for(const sale of queue){for(const item of sale.args.p_items)reserved.set(item.product_id,(reserved.get(item.product_id)||0)+item.quantity);}setProducts(cached.map(p=>({...p,stock:Math.max(0,Number(p.stock)-(reserved.get(p.id)||0))})));setError("Sin conexión: catálogo local. El stock puede estar desactualizado.");}catch{setError("No se pudo cargar el catálogo ni existe una copia local. Conéctate para cargarlo por primera vez.");}}
   finally{setLoading(false);}
  }
- useEffect(()=>{setOnline(typeof navigator==="undefined"?true:navigator.onLine);if(companyId){setOfflineQueue(readQueue(companyId));void load();}},[companyId]);
- useEffect(()=>{const onlineHandler=()=>{setOnline(true);if(companyId){setOfflineQueue(readQueue(companyId));void load();}};const offlineHandler=()=>setOnline(false);window.addEventListener("online",onlineHandler);window.addEventListener("offline",offlineHandler);return()=>{window.removeEventListener("online",onlineHandler);window.removeEventListener("offline",offlineHandler);};},[companyId]);
- useEffect(()=>{if(!companyId||!online||syncingOffline||pendingSale)return;const queue=readQueue(companyId);if(!queue.length)return;let cancelled=false;const sync=async()=>{setSyncingOffline(true);try{for(const item of queue){if(cancelled)break;try{const {data,error}=await supabase.rpc("complete_sale_atomic",item.args);if(error)throw error;if(!data?.ok||!data?.sale_id)throw new Error("Servidor no confirmó la venta");const current=readQueue(companyId).filter(x=>x.localId!==item.localId);writeQueue(companyId,current);setOfflineQueue(current);onNotice?.(`Venta offline #${data.sale_number} sincronizada.`);}catch(e){const current=readQueue(companyId).map(x=>x.localId===item.localId?{...x,status:"queued" as const,lastError:e instanceof Error?e.message:"Error de sincronización"}:x);writeQueue(companyId,current);setOfflineQueue(current);break;}}await load();}finally{setSyncingOffline(false);}};void sync();return()=>{cancelled=true;};},[companyId,online]);
+ useEffect(()=>{setOnline(typeof navigator==="undefined"?true:navigator.onLine);if(companyId){void (async()=>{setOfflineQueue(await getOfflineSales(companyId));await load();})();}},[companyId]);
+ useEffect(()=>{const onlineHandler=()=>{setOnline(true);if(companyId){void (async()=>{setOfflineQueue(await getOfflineSales(companyId));await load();})();}};const offlineHandler=()=>setOnline(false);window.addEventListener("online",onlineHandler);window.addEventListener("offline",offlineHandler);return()=>{window.removeEventListener("online",onlineHandler);window.removeEventListener("offline",offlineHandler);};},[companyId]);
+ useEffect(()=>{if(!companyId||!online||syncingOffline||pendingSale)return;let cancelled=false;const sync=async()=>{const queue=await getOfflineSales(companyId);if(!queue.length)return;setSyncingOffline(true);try{for(const item of queue){if(cancelled)break;try{const {data,error}=await supabase.rpc("complete_sale_atomic",item.args);if(error)throw error;if(!data?.ok||!data?.sale_id)throw new Error("Servidor no confirmó la venta");const current=(await getOfflineSales(companyId)).filter(x=>x.localId!==item.localId);await saveOfflineSales(companyId,current);setOfflineQueue(current);onNotice?.(`Venta offline #${data.sale_number} sincronizada.`);}catch(e){const current=(await getOfflineSales(companyId)).map(x=>x.localId===item.localId?{...x,status:"queued" as const,lastError:e instanceof Error?e.message:"Error de sincronización"}:x);await saveOfflineSales(companyId,current);setOfflineQueue(current);break;}}await load();}finally{setSyncingOffline(false);}};void sync();return()=>{cancelled=true;};},[companyId,online]);
  useEffect(()=>{
   if(!companyId)return;
   setRestoredPending(false);setRecoveryBlocked(false);
@@ -90,8 +86,8 @@ export default function PosShell({companyId,onNotice}:Props){
   try{window.localStorage.setItem(pendingStorageKey(companyId),JSON.stringify(request));}catch{setError("No se pudo guardar de forma segura la solicitud pendiente en este dispositivo. No se envió la venta; libera espacio del navegador e inténtalo de nuevo.");return;}
   setIdempotencyKey(requestKey);
   if(!navigator.onLine){
-   const queued:OfflineSale={...request,localId:requestKey,status:"queued"};
-   try{const next=[...readQueue(companyId),queued];writeQueue(companyId,next);setOfflineQueue(next);const reserved=new Map<string,number>();for(const sale of next){for(const item of sale.args.p_items)reserved.set(item.product_id,(reserved.get(item.product_id)||0)+item.quantity);}setProducts(old=>old.map(p=>({...p,stock:Math.max(0,Number(p.stock)-((request.args.p_items.find(i=>i.product_id===p.id)?.quantity)||0))})));setReceipt({offline:true,localId:requestKey,total_amount:total,change_due:method==="cash"?change:0,document_type:docType,customer});setCart([]);setReceived("");setCashPart("");setOtherPart("");setOperation("");setReference("");setOtherOperation("");setOtherReference("");setError("");onNotice?.("Venta guardada en este dispositivo. Pendiente de sincronización; no es todavía una venta confirmada por el servidor.");}catch{setError("No se pudo guardar la venta offline. No se confirmó ni se envió al servidor.");}
+   const queued:OfflineSaleRecord={...request,localId:requestKey,status:"queued"};
+   try{const next=[...(await getOfflineSales(companyId)),queued];await saveOfflineSales(companyId,next);window.localStorage.removeItem(pendingStorageKey(companyId));setPendingSale(null);setOfflineQueue(next);const reserved=new Map<string,number>();for(const sale of next){for(const item of sale.args.p_items)reserved.set(item.product_id,(reserved.get(item.product_id)||0)+item.quantity);}setProducts(old=>old.map(p=>({...p,stock:Math.max(0,Number(p.stock)-((request.args.p_items.find(i=>i.product_id===p.id)?.quantity)||0))})));setReceipt({offline:true,localId:requestKey,total_amount:total,change_due:method==="cash"?change:0,document_type:docType,customer});setCart([]);setReceived("");setCashPart("");setOtherPart("");setOperation("");setReference("");setOtherOperation("");setOtherReference("");setError("");onNotice?.("Venta guardada en este dispositivo. Pendiente de sincronización; no es todavía una venta confirmada por el servidor.");}catch{setError("No se pudo guardar la venta offline. No se confirmó ni se envió al servidor.");}
    return;
   }
   setPendingSale(request);await submitPending(request);
