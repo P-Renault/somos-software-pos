@@ -4,104 +4,82 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+/**
+ * Retorno del navegador desde Flow.
+ * La verificación del pago se realiza en Supabase, donde están
+ * configuradas las credenciales privadas de Flow.
+ */
 export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
-  const appUrlValue = process.env.BOOM_POS_APP_URL;
+  const incoming = new URL(request.url);
+  const token = incoming.searchParams.get("token");
 
-  let appUrl: URL;
-
-  try {
-    if (!appUrlValue) {
-      throw new Error("Missing BOOM_POS_APP_URL");
-    }
-
-    appUrl = new URL(appUrlValue);
-
-    if (appUrl.protocol !== "https:") {
-      throw new Error("HTTPS required");
-    }
-  } catch {
-    return NextResponse.json(
-      { error: "La URL de BOOM POS no está configurada correctamente." },
-      { status: 503 },
-    );
-  }
-
-  // Si se abre manualmente, no hay resultado de pago que verificar.
-  const token = requestUrl.searchParams.get("token");
-
-  if (!token) {
-    return NextResponse.redirect(
-      new URL("/", appUrl),
-      303,
-    );
-  }
-
-  // El estado del pago debe verificarse en el servidor.
-  // Nunca aceptar un resultado aprobado/rechazado enviado por el navegador.
   const projectUrl = (
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
     process.env.PROJECT_URL ||
     ""
   ).trim().replace(/\/+$/, "");
 
-  const anonKey =
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
-    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
-    "";
-
-  if (!projectUrl || !anonKey) {
-    console.error("Falta configuración pública de Supabase para verificar el retorno.");
-
-    return redirectWithResult(appUrl, "pending");
+  if (!projectUrl) {
+    return NextResponse.json(
+      { error: "Falta la URL pública de Supabase en Vercel." },
+      { status: 503 },
+    );
   }
+
+  let supabaseUrl: URL;
 
   try {
-    // La Edge Function debe verificar el token consultando a Flow
-    // y devolver el estado real de la operación.
-    const response = await fetch(
-      `${projectUrl}/functions/v1/flow-return`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: anonKey,
-        },
-        body: JSON.stringify({ token }),
-        cache: "no-store",
-        signal: AbortSignal.timeout(15000),
-      },
+    supabaseUrl = new URL(projectUrl);
+
+    if (supabaseUrl.protocol !== "https:") {
+      throw new Error("HTTPS requerido");
+    }
+  } catch {
+    return NextResponse.json(
+      { error: "La URL pública de Supabase no es válida." },
+      { status: 503 },
     );
+  }
 
-    const result = await response.json().catch(() => null);
+  // Una apertura manual no contiene información de un pago.
+  if (!token) {
+    const appUrlValue = process.env.BOOM_POS_APP_URL;
 
-    if (!response.ok) {
-      console.error("No se pudo verificar el pago en Supabase:", response.status);
-      return redirectWithResult(appUrl, "pending");
+    if (appUrlValue) {
+      try {
+        const appUrl = new URL(appUrlValue);
+
+        if (appUrl.protocol === "https:") {
+          return NextResponse.redirect(new URL("/", appUrl), 303);
+        }
+      } catch {
+        // No utilizar una URL de retorno inválida.
+      }
     }
 
-    const paymentResult =
-      result?.payment_result === "approved"
-        ? "approved"
-        : result?.payment_result === "rejected"
-          ? "rejected"
-          : "pending";
-
-    return redirectWithResult(appUrl, paymentResult);
-  } catch (error) {
-    console.error("Error procesando retorno de Flow:", error);
-    return redirectWithResult(appUrl, "pending");
+    return NextResponse.json(
+      {
+        error:
+          "Esta ruta recibe el retorno de Flow. Debes abrirla desde una operación de pago.",
+      },
+      { status: 400 },
+    );
   }
-}
 
-function redirectWithResult(
-  appUrl: URL,
-  result: "approved" | "rejected" | "pending",
-) {
-  const destination = new URL("/", appUrl);
+  if (token.length > 500) {
+    return NextResponse.json(
+      { error: "El token de Flow no es válido." },
+      { status: 400 },
+    );
+  }
 
-  destination.searchParams.set("payment_result", result);
-  destination.searchParams.set("payment_provider", "flow");
+  // Delegar la consulta a la Edge Function de Supabase.
+  // Allí se verifica el estado real mediante la API de Flow.
+  const edgeUrl = new URL(
+    `${supabaseUrl.origin}/functions/v1/flow-return`,
+  );
 
-  return NextResponse.redirect(destination, 303);
+  edgeUrl.searchParams.set("token", token);
+
+  return NextResponse.redirect(edgeUrl, 303);
 }
