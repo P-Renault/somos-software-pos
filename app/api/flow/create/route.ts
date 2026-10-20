@@ -6,6 +6,7 @@ export const runtime = "nodejs";
 
 export async function POST(request: Request) {
   try {
+    // 1. Validar la sesión del usuario.
     const supabase = await createClient();
 
     const {
@@ -15,11 +16,12 @@ export async function POST(request: Request) {
 
     if (authError || !user) {
       return NextResponse.json(
-        { error: "Debes iniciar sesión." },
+        { error: "Debes iniciar sesión para contratar un plan." },
         { status: 401 },
       );
     }
 
+    // 2. Obtener el identificador de la suscripción.
     const body = await request.json().catch(() => null);
 
     const subscriptionId =
@@ -34,9 +36,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // La URL pública de Supabase se obtiene desde la configuración
-    // del cliente de la aplicación. Las credenciales privadas de Flow
-    // permanecen en los secretos de Supabase Edge Functions.
+    // 3. Obtener la URL pública de Supabase.
+    // Las claves privadas de Flow permanecen en Supabase Edge Functions.
     const projectUrl = (
       process.env.NEXT_PUBLIC_SUPABASE_URL ||
       process.env.PROJECT_URL ||
@@ -47,16 +48,16 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Falta NEXT_PUBLIC_SUPABASE_URL en Vercel. Configura la URL pública del proyecto Supabase de BOOM POS.",
+            "Falta NEXT_PUBLIC_SUPABASE_URL en Vercel para el proyecto Supabase de BOOM POS.",
         },
         { status: 503 },
       );
     }
 
-    let parsedUrl: URL;
+    let parsedProjectUrl: URL;
 
     try {
-      parsedUrl = new URL(projectUrl);
+      parsedProjectUrl = new URL(projectUrl);
     } catch {
       return NextResponse.json(
         { error: "La URL del proyecto Supabase no es válida." },
@@ -64,13 +65,14 @@ export async function POST(request: Request) {
       );
     }
 
-    if (parsedUrl.protocol !== "https:") {
+    if (parsedProjectUrl.protocol !== "https:") {
       return NextResponse.json(
-        { error: "La URL del proyecto Supabase debe utilizar HTTPS." },
+        { error: "La URL de Supabase debe utilizar HTTPS." },
         { status: 503 },
       );
     }
 
+    // 4. Obtener el token de la sesión autenticada.
     const {
       data: { session },
       error: sessionError,
@@ -96,8 +98,8 @@ export async function POST(request: Request) {
       headers.apikey = publishableKey;
     }
 
-    // La Edge Function se encarga de leer los secretos privados,
-    // validar la suscripción y crear el checkout de Flow.
+    // 5. Invocar la Edge Function de Supabase.
+    // Esta función debe validar la suscripción y crear el pago en Flow.
     const edgeResponse = await fetch(
       `${projectUrl}/functions/v1/flow-create-payment`,
       {
@@ -117,7 +119,7 @@ export async function POST(request: Request) {
           ? result.error
           : "Supabase no pudo iniciar el pago con Flow.";
 
-      console.error("BOOM POS Flow Edge Function error", {
+      console.error("BOOM POS: error al crear el pago", {
         status: edgeResponse.status,
         message,
       });
@@ -134,23 +136,50 @@ export async function POST(request: Request) {
       );
     }
 
+    // 6. Flow debe devolver tanto la URL de checkout como el token.
     if (
       !result ||
       typeof result.url !== "string" ||
-      !result.url.startsWith("https://")
+      typeof result.token !== "string" ||
+      !result.url.startsWith("https://") ||
+      !result.token.trim()
     ) {
+      console.error("BOOM POS: respuesta incompleta de Flow", {
+        hasUrl: typeof result?.url === "string",
+        hasToken: typeof result?.token === "string",
+      });
+
       return NextResponse.json(
-        { error: "Supabase no devolvió una URL de pago HTTPS válida." },
+        {
+          error:
+            "Flow no devolvió la URL y el token requeridos para abrir el pago.",
+        },
         { status: 502 },
       );
     }
 
-    return NextResponse.json({ url: result.url });
+    // 7. Construir la URL final de checkout.
+    // No se debe descartar el token devuelto por Flow.
+    const checkoutUrl = new URL(result.url);
+    checkoutUrl.searchParams.set("token", result.token);
+
+    // 8. Devolver la URL final al frontend.
+    return NextResponse.json(
+      { url: checkoutUrl.toString() },
+      {
+        headers: {
+          "Cache-Control": "no-store",
+        },
+      },
+    );
   } catch (error) {
-    console.error("BOOM POS Flow create proxy error", error);
+    console.error("BOOM POS: error interno al iniciar Flow", error);
 
     return NextResponse.json(
-      { error: "No se pudo iniciar el pago. Revisa los registros de Supabase." },
+      {
+        error:
+          "No se pudo iniciar el pago. Revisa los registros de Supabase y Vercel.",
+      },
       { status: 500 },
     );
   }
