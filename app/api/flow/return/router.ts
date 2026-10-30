@@ -6,8 +6,8 @@ export const dynamic = "force-dynamic";
 type PaymentResult = "approved" | "rejected" | "pending";
 
 function redirectToApp(request: Request, result: PaymentResult) {
-  const requestUrl = new URL(request.url);
   const configuredUrl = process.env.BOOM_POS_APP_URL?.trim();
+  const requestUrl = new URL(request.url);
 
   let appUrl: URL;
   try {
@@ -24,37 +24,40 @@ function redirectToApp(request: Request, result: PaymentResult) {
   return NextResponse.redirect(destination, 303);
 }
 
-async function readFlowToken(request: Request): Promise<string | null> {
-  const url = new URL(request.url);
-  const queryToken = url.searchParams.get("token");
+async function readFlowToken(request: Request): Promise<string> {
+  const requestUrl = new URL(request.url);
+  const queryToken = requestUrl.searchParams.get("token");
   if (queryToken) return queryToken;
 
-  if (request.method !== "POST") return null;
+  const contentType = request.headers.get("content-type") || "";
 
-  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
-
-  try {
-    if (contentType.includes("application/json")) {
-      const body = await request.json();
-      return typeof body?.token === "string" ? body.token : null;
-    }
-
-    const raw = await request.text();
-    const form = new URLSearchParams(raw);
-    return form.get("token");
-  } catch {
-    return null;
+  if (contentType.includes("application/json")) {
+    const body = await request.json().catch(() => ({}));
+    return typeof body?.token === "string" ? body.token : "";
   }
+
+  if (
+    contentType.includes("application/x-www-form-urlencoded") ||
+    contentType.includes("multipart/form-data")
+  ) {
+    const form = await request.formData().catch(() => null);
+    const value = form?.get("token");
+    return typeof value === "string" ? value : "";
+  }
+
+  const raw = await request.text().catch(() => "");
+  if (!raw) return "";
+  return new URLSearchParams(raw).get("token") || "";
 }
 
 async function handleFlowReturn(request: Request) {
-  const token = await readFlowToken(request);
-
-  if (!token || token.length > 500) {
-    return redirectToApp(request, "pending");
-  }
-
   try {
+    const token = await readFlowToken(request);
+
+    if (!token || token.length > 500) {
+      return redirectToApp(request, "pending");
+    }
+
     const confirmationUrl = new URL("/api/flow/confirmation", new URL(request.url).origin);
     const form = new URLSearchParams({ token });
 
@@ -73,17 +76,22 @@ async function handleFlowReturn(request: Request) {
       return redirectToApp(request, "pending");
     }
 
-    let result: PaymentResult = "pending";
-    if (data.paymentStatus === "approved") result = "approved";
-    if (data.paymentStatus === "rejected") result = "rejected";
+    const result: PaymentResult =
+      data.paymentStatus === "approved"
+        ? "approved"
+        : data.paymentStatus === "rejected"
+          ? "rejected"
+          : "pending";
 
     return redirectToApp(request, result);
   } catch (error) {
-    console.error("Flow return: error verifying payment", error);
+    console.error("Flow return error", error);
     return redirectToApp(request, "pending");
   }
 }
 
+// Flow puede volver al navegador mediante GET o POST.
+// Ambos métodos pasan por la misma verificación server-to-server.
 export async function GET(request: Request) {
   return handleFlowReturn(request);
 }
@@ -91,3 +99,4 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   return handleFlowReturn(request);
 }
+
