@@ -1,25 +1,19 @@
-
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 type PaymentResult = "approved" | "rejected" | "pending";
 
 function redirectToApp(request: Request, result: PaymentResult) {
-  const configuredUrl = process.env.BOOM_POS_APP_URL?.trim();
   const requestUrl = new URL(request.url);
-
-  // Usar un dominio de aplicación configurado, nunca una URL
-  // arbitraria enviada por parámetros del navegador.
+  const configuredUrl = process.env.BOOM_POS_APP_URL?.trim();
   let appUrl: URL;
 
   try {
     appUrl = new URL(configuredUrl || requestUrl.origin);
-
-    if (appUrl.protocol !== "https:") {
-      throw new Error("HTTPS requerido");
-    }
+    if (appUrl.protocol !== "https:") throw new Error("HTTPS requerido");
   } catch {
     appUrl = new URL(requestUrl.origin);
   }
@@ -27,65 +21,87 @@ function redirectToApp(request: Request, result: PaymentResult) {
   const destination = new URL("/", appUrl);
   destination.searchParams.set("payment_result", result);
   destination.searchParams.set("payment_provider", "flow");
-
   return NextResponse.redirect(destination, 303);
 }
 
-export async function GET(request: Request) {
-  const requestUrl = new URL(request.url);
-  const token = requestUrl.searchParams.get("token");
+/** Flow puede entregar el token en query string o en el cuerpo del retorno. */
+async function readFlowToken(request: Request): Promise<string> {
+  const queryToken = new URL(request.url).searchParams.get("token");
+  if (queryToken) return queryToken.trim();
 
-  // Abrir la ruta manualmente no representa una operación de pago.
-  if (!token) {
-    return redirectToApp(request, "pending");
+  const contentType = (request.headers.get("content-type") || "").toLowerCase();
+
+  if (contentType.includes("application/json")) {
+    const body: unknown = await request.json().catch(() => null);
+    if (body && typeof body === "object" && "token" in body) {
+      const token = (body as { token?: unknown }).token;
+      return typeof token === "string" ? token.trim() : "";
+    }
+    return "";
   }
 
-  if (token.length > 500) {
-    return redirectToApp(request, "pending");
+  if (contentType.includes("multipart/form-data")) {
+    const form = await request.formData().catch(() => null);
+    const token = form?.get("token");
+    return typeof token === "string" ? token.trim() : "";
   }
 
+  const rawBody = await request.text().catch(() => "");
+  if (!rawBody) return "";
+  return (new URLSearchParams(rawBody).get("token") || "").trim();
+}
+
+async function handleFlowReturn(request: Request) {
   try {
-    // Reutilizar la ruta de confirmación existente, que consulta
-    // el estado real de la operación con Flow y valida la orden.
-    const confirmationUrl = new URL(
-      "/api/flow/confirmation",
-      requestUrl.origin,
-    );
+    const token = await readFlowToken(request);
 
-    const form = new URLSearchParams();
-    form.set("token", token);
+    if (!token || token.length > 500) {
+      return redirectToApp(request, "pending");
+    }
 
+    // La confirmación consulta el estado directamente con Flow y actualiza
+    // el pago/suscripción. El retorno del navegador nunca confirma por sí solo.
+    const confirmationUrl = new URL("/api/flow/confirmation", new URL(request.url).origin);
+    const body = new URLSearchParams({ token });
     const response = await fetch(confirmationUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: form.toString(),
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: body.toString(),
       cache: "no-store",
       signal: AbortSignal.timeout(20000),
     });
 
-    const data = await response.json().catch(() => null);
+    const data: { paymentStatus?: unknown } | null = await response
+      .json()
+      .catch(() => null);
 
     if (!response.ok || !data) {
-      console.error("Flow return: no se pudo confirmar el pago", {
+      console.error("BOOM POS Flow return: confirmation failed", {
         httpStatus: response.status,
       });
-
       return redirectToApp(request, "pending");
     }
 
-    let result: PaymentResult = "pending";
-
-    if (data.paymentStatus === "approved") {
-      result = "approved";
-    } else if (data.paymentStatus === "rejected") {
-      result = "rejected";
-    }
+    const result: PaymentResult =
+      data.paymentStatus === "approved"
+        ? "approved"
+        : data.paymentStatus === "rejected"
+          ? "rejected"
+          : "pending";
 
     return redirectToApp(request, result);
   } catch (error) {
-    console.error("Flow return: error verificando el resultado", error);
+    console.error("BOOM POS Flow return error", error);
     return redirectToApp(request, "pending");
   }
+}
+
+// Admitir ambos métodos evita el HTTP 405 si el proveedor/navegador retorna
+// mediante POST en vez de GET. Ambos siguen verificando el pago en Flow.
+export async function GET(request: Request) {
+  return handleFlowReturn(request);
+}
+
+export async function POST(request: Request) {
+  return handleFlowReturn(request);
 }
