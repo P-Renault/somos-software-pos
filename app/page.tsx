@@ -97,10 +97,16 @@ export default function ComercialPage() {
         <div className={styles.proofs}><span>✓ Gestión en la nube</span><span>✓ Acceso desde distintos dispositivos</span><span>✓ Planes para cada etapa</span></div>
       </div>
       <div className={styles.heroVisual}>
-        <div className={styles.glow}/>
-        <div className={styles.screen}><div className={styles.screenTop}><b>BOOM <i>POS</i></b><span>Panel de ventas</span><span className={styles.avatar}>P</span></div><Image src="/boom-pos-dashboard.jpg" alt="Panel de gestión comercial BOOM POS" width={1356} height={687} priority className={styles.dashboard}/></div>
-        <div className={styles.floatingCard}><span className={styles.floatIcon}>↗</span><div><small>Tu operación, más ordenada</small><b>Todo conectado</b></div></div>
-        <div className={styles.orangeOrb}/>
+        <Image
+          src="/boom-pos-hero-kit.webp"
+          alt="BOOM POS funcionando en notebook y celular, con impresora térmica y lector de códigos de barras"
+          width={1774}
+          height={887}
+          priority
+          fetchPriority="high"
+          sizes="(max-width: 720px) 100vw, 58vw"
+          className={styles.heroKit}
+        />
       </div>
     </section>
 
