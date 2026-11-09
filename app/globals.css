@@ -82,3 +82,36 @@
 .subscription-onboarding-recommendation p{margin:0;color:var(--muted,#64748b);font-size:.92rem;line-height:1.5}
 .subscription-option-recommended{border-color:#f97316;background:rgba(249,115,22,.06);box-shadow:inset 3px 0 0 #f97316}
 .subscription-option-recommended:hover{border-color:#ea580c}
+
+
+/* BOOM POS · Iconografía profesional del menú lateral */
+.sidebar .nav-item{
+  gap:13px;
+  min-height:46px;
+  border-radius:11px;
+  font-size:13.5px;
+  font-weight:650;
+  transition:background .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease;
+}
+.sidebar .nav-icon{
+  width:24px;
+  min-width:24px;
+  height:24px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  color:#f36a16;
+  font-size:0;
+}
+.sidebar .nav-icon svg{
+  width:21px;
+  height:21px;
+  display:block;
+  transition:transform .18s ease;
+}
+.sidebar .nav-item:hover .nav-icon svg{transform:scale(1.08)}
+.sidebar .nav-item.active .nav-icon{color:#fff}
+.sidebar .nav-item.active{background:linear-gradient(105deg,#ff9800 0%,#ff6b00 65%,#f34e17 100%)}
+.sidebar .nav-item:focus-visible{outline:2px solid #ff8a32;outline-offset:2px}
+.sidebar.compact .nav-icon{width:25px;min-width:25px}
+.sidebar.compact .nav-icon svg{width:22px;height:22px}
