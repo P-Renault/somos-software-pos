@@ -15,21 +15,66 @@ const features = [
   ["clipboard", "Compras y proveedores", "Mantén ordenadas tus compras y la información de proveedores."],
   ["users", "Clientes", "Centraliza los datos de tus clientes y su actividad comercial."],
   ["cash", "Caja y finanzas", "Controla movimientos y revisa indicadores de tu operación."],
-  ["chart", "Reportes", "Consulta información para tomar
+  ["chart", "Reportes", "Consulta información para tomar mejores decisiones."],
+] as const;
 
 function FeatureIcon({ name }: { name: string }) {
-  const common = { fill: "none", stroke: "currentColor", strokeWidth: 2.1, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
-  return <svg viewBox="0 0 48 48" aria-hidden="true" {...common}>
-    {name === "cart" && <><path d="M5 8h5l4.5 22h22l6-16H12"/><path d="M17 20h18M19 25h13"/><circle cx="19" cy="38" r="2.5"/><circle cx="35" cy="38" r="2.5"/></>}
-    {name === "boxes" && <><path d="m24 5 17 9-17 9-17-9 17-9Z"/><path d="M7 14v19l17 10 17-10V14M24 23v20"/><path d="m15 10 17 9"/></>}
-    {name === "clipboard" && <><rect x="9" y="8" width="30" height="35" rx="3"/><path d="M18 8V5h12v3M16 19h16M16 26h16M16 33h10"/></>}
-    {name === "users" && <><circle cx="18" cy="16" r="7"/><path d="M4 40v-3a14 14 0 0 1 28 0v3H4Z"/><path d="M32 10a7 7 0 0 1 0 13M35 27a11 11 0 0 1 9 11v2h-7"/></>}
-    {name === "cash" && <><rect x="4" y="12" width="40" height="28" rx="4"/><path d="M4 20h40M11 12V7h26v5M24 24v13M29 28c0-4-10-4-10 0s10 4 10 8-10 4-10 0"/></>}
-    {name === "chart" && <><path d="M6 42V7M6 42h38"/><rect x="12" y="27" width="7" height="15" rx="1"/><rect x="24" y="19" width="7" height="23" rx="1"/><rect x="36" y="10" width="7" height="32" rx="1"/><path d="m12 20 10-7 8 3 12-10M35 6h7v7"/></>}
-  </svg>;
+  const common = {
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2.1,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+
+  return (
+    <svg viewBox="0 0 48 48" aria-hidden="true" {...common}>
+      {name === "cart" && (
+        <>
+          <path d="M5 8h5l4.5 22h22l6-16H12" />
+          <path d="M17 20h18M19 25h13" />
+          <circle cx="19" cy="38" r="2.5" />
+          <circle cx="35" cy="38" r="2.5" />
+        </>
+      )}
+      {name === "boxes" && (
+        <>
+          <path d="m24 5 17 9-17 9-17-9 17-9Z" />
+          <path d="M7 14v19l17 10 17-10V14M24 23v20" />
+          <path d="m15 10 17 9" />
+        </>
+      )}
+      {name === "clipboard" && (
+        <>
+          <rect x="9" y="8" width="30" height="35" rx="3" />
+          <path d="M18 8V5h12v3M16 19h16M16 26h16M16 33h10" />
+        </>
+      )}
+      {name === "users" && (
+        <>
+          <circle cx="18" cy="16" r="7" />
+          <path d="M4 40v-3a14 14 0 0 1 28 0v3H4Z" />
+          <path d="M32 10a7 7 0 0 1 0 13M35 27a11 11 0 0 1 9 11v2h-7" />
+        </>
+      )}
+      {name === "cash" && (
+        <>
+          <rect x="4" y="12" width="40" height="28" rx="4" />
+          <path d="M4 20h40M11 12V7h26v5M24 24v13M29 28c0-4-10-4-10 0s10 4 10 8-10 4-10 0" />
+        </>
+      )}
+      {name === "chart" && (
+        <>
+          <path d="M6 42V7M6 42h38" />
+          <rect x="12" y="27" width="7" height="15" rx="1" />
+          <rect x="24" y="19" width="7" height="23" rx="1" />
+          <rect x="36" y="10" width="7" height="32" rx="1" />
+          <path d="m12 20 10-7 8 3 12-10M35 6h7v7" />
+        </>
+      )}
+    </svg>
+  );
 }
- mejores decisiones."],
-];
 
 export default function ComercialPage() {
   return <main className={styles.page}>
