@@ -5,7 +5,13 @@
 export type OfflineSaleRecord = {
   localId: string;
   companyId: string;
-  args: { p_idempotency_key: string; p_items: { product_id: string; quantity: number }[] };
+  args: {
+    p_idempotency_key: string;
+    p_items: { product_id: string; quantity: number }[];
+    [key: string]: unknown;
+  };
+  customer?: string;
+  docType?: number;
   customer: string;
   docType: number;
   createdAt: string;
