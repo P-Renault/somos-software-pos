@@ -47,7 +47,30 @@ export default function ComercialPage() {
     </section>
 
     <section className={styles.featureStrip} aria-label="Áreas de gestión">
-      {["Ventas","Inventario","Compras","Clientes","Caja y finanzas","Reportes"].map((item,i)=><div key={item}><span>{["🛒","◇","▤","♙","▣","▥"][i]}</span><b>{item}</b></div>)}
+      <div className={styles.featureItem}>
+        <span className={styles.featureIconBox} aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M5 8h5l4.2 21.2a4 4 0 0 0 3.9 3.2h18.5a4 4 0 0 0 3.8-2.8L44 16H13"/><path d="M18 21h19M20 26h14M18 39a2.5 2.5 0 1 0 0 .1M36 39a2.5 2.5 0 1 0 0 .1"/></svg></span>
+        <b>Ventas</b>
+      </div>
+      <div className={styles.featureItem}>
+        <span className={styles.featureIconBox} aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M5 25.5 15.5 15 26 25.5 15.5 36 5 25.5ZM22 12.5 29.5 5 43 18.5 35.5 26M24 34l8.5 8.5L44 31"/></svg></span>
+        <b>Inventario</b>
+      </div>
+      <div className={styles.featureItem}>
+        <span className={styles.featureIconBox} aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M11 5h26a3 3 0 0 1 3 3v32H8V8a3 3 0 0 1 3-3Z"/><path d="M15 15h18M15 22h18M15 29h9M29 31c0-3 8-3 8 0s-8 3-8 6 8 3 8 0"/></svg></span>
+        <b>Compras</b>
+      </div>
+      <div className={styles.featureItem}>
+        <span className={styles.featureIconBox} aria-hidden="true"><svg viewBox="0 0 48 48"><circle cx="18" cy="16" r="7"/><path d="M5 39v-3a13 13 0 0 1 26 0v3H5ZM34 10a7 7 0 0 1 0 13M35 28a11 11 0 0 1 8 10v1h-6"/></svg></span>
+        <b>Clientes</b>
+      </div>
+      <div className={styles.featureItem}>
+        <span className={styles.featureIconBox} aria-hidden="true"><svg viewBox="0 0 48 48"><rect x="5" y="8" width="38" height="31" rx="4"/><path d="M5 18h38M14 8v10M34 8v10M13 27h8M27 27h8M13 33h8"/></svg></span>
+        <b>Caja y finanzas</b>
+      </div>
+      <div className={styles.featureItem}>
+        <span className={styles.featureIconBox} aria-hidden="true"><svg viewBox="0 0 48 48"><path d="M6 41V7M6 41h38M13 32l9-10 7 5L42 11M33 11h9v9"/><rect x="12" y="34" width="5" height="7" rx="1"/><rect x="23" y="29" width="5" height="12" rx="1"/><rect x="34" y="23" width="5" height="18" rx="1"/></svg></span>
+        <b>Reportes</b>
+      </div>
     </section>
 
     <section className={styles.featuresSection} id="funcionalidades">
