@@ -164,7 +164,24 @@ export default function ComercialPage() {
       <div><span className={styles.flowMark}>F</span><div><h3>Gestión de suscripciones</h3><p>El sistema incorpora flujo de suscripción y pago en línea. La activación de planes pagados depende de la confirmación de la transacción.</p><span className={styles.status}>Confirmación de pago requerida</span></div></div>
     </section>
 
-    <section className={styles.finalCta} id="contacto"><div><span className={styles.eyebrow}>BOOM POS · SOMOS SOFTWARE</span><h2>Empieza a ordenar<br/>tu negocio hoy.</h2><p>Elige tu plan y comienza a gestionar tu operación comercial.</p></div><div className={styles.finalActions}><Link href="/login" className={styles.primary}>Crear mi cuenta <span>→</span></Link><a href="#planes" className={styles.darkLink}>Comparar planes</a></div></section>
+    <section className={styles.finalCta} id="contacto" aria-label="Comienza a gestionar tu negocio con BOOM POS">
+      <Image
+        src="/boom-pos-final-cta.webp"
+        alt="Comerciante satisfecho utilizando BOOM POS en su negocio, con herramientas de ventas, inventario, facturación y reportes"
+        width={2017}
+        height={463}
+        sizes="(max-width: 720px) 100vw, 94vw"
+        className={styles.finalCtaImage}
+      />
+      <div className={styles.finalCtaHotspots}>
+        <Link href="/login" className={styles.finalCtaCreateHotspot} aria-label="Crear mi cuenta en BOOM POS" />
+        <a href="#planes" className={styles.finalCtaPlansHotspot} aria-label="Comparar planes de BOOM POS" />
+      </div>
+      <div className={styles.finalCtaMobileActions}>
+        <Link href="/login" className={styles.primary}>Crear mi cuenta <span>→</span></Link>
+        <a href="#planes" className={styles.finalCtaMobilePlans}>Comparar planes</a>
+      </div>
+    </section>
     <footer className={styles.footer}><div className={styles.footerBrand}><Image src="/boom-pos-logo.png" alt="BOOM POS" width={132} height={58}/><span>Una solución de gestión comercial de Somos Software.</span></div><div className={styles.footerLinks}><a href="#funcionalidades">Funcionalidades</a><a href="#planes">Planes</a><Link href="/login">Acceso al sistema</Link></div><small>© {new Date().getFullYear()} Somos Software · BOOM POS</small></footer>
   </main>;
 }
