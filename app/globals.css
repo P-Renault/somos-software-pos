@@ -84,34 +84,42 @@
 .subscription-option-recommended:hover{border-color:#ea580c}
 
 
-/* BOOM POS · Iconografía profesional del menú lateral */
-.sidebar .nav-item{
-  gap:13px;
-  min-height:46px;
-  border-radius:11px;
-  font-size:13.5px;
-  font-weight:650;
-  transition:background .18s ease,color .18s ease,box-shadow .18s ease,transform .18s ease;
+/* BOOM POS · Iconos del login alineados con la navegación del dashboard */
+.promo-modules>div{
+  width:86px;
+  min-height:84px;
+  gap:10px;
+  border:1px solid rgba(255,255,255,.12);
+  background:linear-gradient(145deg,rgba(255,255,255,.075),rgba(255,255,255,.035));
+  border-radius:13px;
+  transition:transform .18s ease,border-color .18s ease,background .18s ease;
 }
-.sidebar .nav-icon{
-  width:24px;
-  min-width:24px;
-  height:24px;
-  display:inline-flex;
-  align-items:center;
-  justify-content:center;
-  color:#f36a16;
+.promo-modules>div:hover{
+  transform:translateY(-2px);
+  border-color:rgba(255,138,41,.48);
+  background:rgba(255,138,41,.10);
+}
+.promo-modules>div>span{
+  width:34px;
+  height:34px;
+  display:grid;
+  place-items:center;
+  color:#ff8426;
   font-size:0;
 }
-.sidebar .nav-icon svg{
-  width:21px;
-  height:21px;
+.promo-modules>div>span svg{
   display:block;
-  transition:transform .18s ease;
+  width:25px;
+  height:25px;
 }
-.sidebar .nav-item:hover .nav-icon svg{transform:scale(1.08)}
-.sidebar .nav-item.active .nav-icon{color:#fff}
-.sidebar .nav-item.active{background:linear-gradient(105deg,#ff9800 0%,#ff6b00 65%,#f34e17 100%)}
-.sidebar .nav-item:focus-visible{outline:2px solid #ff8a32;outline-offset:2px}
-.sidebar.compact .nav-icon{width:25px;min-width:25px}
-.sidebar.compact .nav-icon svg{width:22px;height:22px}
+.promo-modules>div>small{
+  color:#edf1f7;
+  font-size:10px;
+  font-weight:650;
+  letter-spacing:.01em;
+}
+@media(max-width:900px){
+  .promo-modules{gap:8px}
+  .promo-modules>div{width:78px;min-height:78px}
+  .promo-modules>div>span svg{width:23px;height:23px}
+}
