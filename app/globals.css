@@ -123,3 +123,12 @@
   .promo-modules>div{width:78px;min-height:78px}
   .promo-modules>div>span svg{width:23px;height:23px}
 }
+
+/* BOOM POS · Product measurement configuration */
+.measurement-section{grid-column:1/-1;border:1px solid #e5eaf2;border-radius:12px;padding:14px;background:#fbfcfe;margin-top:2px}
+.measurement-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px;color:#263449;font-size:13px}
+.measurement-section-head span,.measurement-hint{font-size:11px;color:#718096}
+.measurement-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:0}
+.measurement-section select,.measurement-section input{width:100%;min-width:0}
+.measurement-hint{margin:10px 0 0;line-height:1.5}
+@media(max-width:640px){.measurement-grid{grid-template-columns:1fr}.measurement-section-head{align-items:flex-start;flex-direction:column;gap:4px}}
